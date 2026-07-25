@@ -57,6 +57,15 @@ var COMPLAINT_DETAIL_CSV_URL = "";
 // Setup: see apps-script/Code.gs + README. Leave "" to hide the buttons.
 var APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyPf4MYQO4r4NB9yCAa1S7zrMGCcvMCrCuEJGwJfZScPfmGCgKfahIW2ugh9MqDhr0/exec";
 
+/* True when the dashboard runs on a dev server that has no serverless functions
+   (vite dev serves the SPA only, so every /api/* call 404s). */
+function isLocalDev() {
+  try {
+    var h = window.location.hostname;
+    return h === "localhost" || h === "127.0.0.1" || h.indexOf("192.168.") === 0;
+  } catch (e) { return false; }
+}
+
 /* Custom analysis rules (owner feedback) — stored locally, injected into every /api/ai call. */
 function getCustomRules() {
   try { return JSON.parse(window.localStorage.getItem("ai-custom-rules") || "[]"); } catch (e) { return []; }
@@ -72,26 +81,29 @@ function makeAIKey(storeName, rowKey, d) {
 /* ── THEME ── */
 // Nuance-style dark fintech palette: near-black canvas, ink cards, hairline borders, lavender accent
 var N = {
-  bg: "#080A10",          // canvas
-  bgS: "#111621",         // elevated surface (table head, rail)
-  bgC: "#0D111A",         // card
-  card2: "#121826",       // inner card / hover
-  text: "rgba(233,240,252,0.94)",
-  textS: "rgba(233,240,252,0.58)",
-  textT: "rgba(233,240,252,0.34)",
-  border: "rgba(150,180,235,0.10)",
-  borderS: "rgba(150,180,235,0.18)",
+  bg: "#0A0B0D",          // canvas — neutral near-black
+  bgS: "#131519",         // elevated surface (table head, rail)
+  bgC: "#101215",         // card
+  card2: "#161A1F",       // inner card / hover
+  text: "rgba(236,238,242,0.94)",
+  textS: "rgba(236,238,242,0.56)",
+  textT: "rgba(236,238,242,0.32)",
+  border: "rgba(210,218,230,0.085)",
+  borderS: "rgba(210,218,230,0.15)",
   green: "#34D399",
   red: "#FF6B6B",
   orange: "#FBBF24",
-  blue: "#388CFF",
-  blueSoft: "rgba(56,140,255,0.14)",
+  blue: "#4C8DF6",
+  blueSoft: "rgba(76,141,246,0.12)",
+  blueText: "#8FB8F5",
   cyan: "#4CC9F0",
-  violet: "#7C9CFF",
-  grey: "rgba(233,240,252,0.38)",
+  violet: "#8AA2C8",
+  grey: "rgba(236,238,242,0.38)",
+  // Quiet accent used for pills / secondary buttons (same language as the Active tag)
+  quiet: { bg: "rgba(76,141,246,0.11)", border: "rgba(76,141,246,0.28)", text: "#8FB8F5" },
   glow: "0 0 0 1px rgba(56,140,255,0.35), 0 8px 30px rgba(56,140,255,0.22)",
   cardShadow: "0 1px 0 rgba(255,255,255,0.04) inset, 0 12px 32px rgba(0,0,0,0.45)",
-  grad: "linear-gradient(135deg,#388CFF 0%,#4CC9F0 100%)",
+  grad: "linear-gradient(135deg,#4C8DF6 0%,#54C3E8 100%)",
 };
 var FONT = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
 
@@ -110,8 +122,8 @@ function GlobalStyles() {
       body { background: ${N.bg}; }
       ::-webkit-scrollbar { width: 10px; height: 10px; }
       ::-webkit-scrollbar-track { background: transparent; }
-      ::-webkit-scrollbar-thumb { background: rgba(150,180,235,0.16); border-radius: 99px; border: 2px solid transparent; background-clip: content-box; }
-      ::-webkit-scrollbar-thumb:hover { background: rgba(56,140,255,0.45); background-clip: content-box; }
+      ::-webkit-scrollbar-thumb { background: rgba(210,218,230,0.14); border-radius: 99px; border: 2px solid transparent; background-clip: content-box; }
+      ::-webkit-scrollbar-thumb:hover { background: rgba(76,141,246,0.42); background-clip: content-box; }
       select, input, textarea { font-family: ${FONT}; color: ${N.text}; }
       select { appearance: none; -webkit-appearance: none; cursor: pointer; padding-right: 14px;
         background-image: linear-gradient(45deg, transparent 50%, ${N.textT} 50%), linear-gradient(135deg, ${N.textT} 50%, transparent 50%);
@@ -120,7 +132,7 @@ function GlobalStyles() {
       input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
       input[type="checkbox"] { appearance: none; -webkit-appearance: none; width: 15px; height: 15px; border-radius: 5px;
         border: 1.5px solid ${N.borderS}; background: rgba(255,255,255,0.03); cursor: pointer; position: relative; transition: all .15s ease; }
-      input[type="checkbox"]:hover { border-color: ${N.blue}; box-shadow: 0 0 0 3px rgba(56,140,255,0.12); }
+      input[type="checkbox"]:hover { border-color: ${N.blue}; box-shadow: 0 0 0 3px rgba(76,141,246,0.14); }
       input[type="checkbox"]:checked { background: ${N.grad}; border-color: transparent; }
       input[type="checkbox"]:checked::after { content: ""; position: absolute; left: 4.5px; top: 1.5px; width: 4px; height: 8px;
         border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(42deg); }
@@ -686,12 +698,14 @@ async function postToSheet(payload) {
   return json;
 }
 
-function Logo() {
+/* Evershop mark */
+function Logo(props) {
+  var sz = props.size || 22;
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-      <path d="M4 17.5 9 11l4 3.5L20 6" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="9" cy="11" r="1.9" fill="#fff" />
-      <circle cx="20" cy="6" r="1.9" fill="#fff" />
+    <svg width={sz} height={sz} viewBox="0 0 256 256" fill="none" aria-label="Evershop">
+      <g transform="translate(0,256) scale(0.1,-0.1)" fill={props.color || "currentColor"} stroke="none">
+        <path d="M350 1280 l0 -940 930 0 930 0 0 940 0 940 -930 0 -930 0 0 -940z m1780 818 c-1 -144 -109 -367 -210 -434 l-39 -26 -57 26 c-121 55 -153 32 -344 -244 -222 -320 -301 -407 -435 -481 -88 -48 -157 -112 -174 -160 l-11 -31 33 22 c17 12 82 45 142 75 190 92 224 127 453 467 185 274 216 297 304 227 59 -47 83 -52 133 -30 44 19 116 84 173 156 l32 40 0 -643 0 -642 -850 0 c-810 0 -850 1 -850 18 0 66 52 192 121 294 45 66 244 322 301 388 77 87 117 97 193 46 48 -33 89 -33 136 0 42 29 175 184 294 344 151 202 182 230 255 230 32 0 56 -7 84 -26 48 -33 37 -8 -21 49 -50 47 -92 61 -143 43 -58 -20 -111 -68 -266 -242 -158 -177 -203 -221 -238 -230 -22 -5 -48 6 -130 53 -31 19 -67 16 -108 -10 -20 -12 -128 -119 -239 -237 -110 -118 -210 -224 -220 -235 -19 -19 -19 -9 -19 608 l0 627 850 0 850 0 0 -42z" />
+      </g>
     </svg>
   );
 }
@@ -746,8 +760,8 @@ function ActionHistory(props) {
         return (
           <div key={i} style={{ display: "flex", flexDirection: "column", gap: 4, padding: "8px 0", borderTop: i === 0 ? "none" : "1px solid " + N.border, opacity: a.pending ? 0.6 : 1 }}>
             <div style={{ display: "flex", gap: 10, alignItems: "baseline", fontSize: 11.5, flexWrap: "wrap" }}>
-              <span style={{ color: N.blue, fontWeight: 700, fontSize: 11.5, minWidth: 32 }}>W{a.week}</span>
-              <span style={{ fontSize: 11.5, color: N.textS, background: "rgba(56,140,255,0.12)", padding: "2px 7px", borderRadius: 10, whiteSpace: "nowrap" }}>{cat ? cat.label : a.category}</span>
+              <span style={{ color: N.textT, fontWeight: 700, fontSize: 11.5, minWidth: 32 }}>W{a.week}</span>
+              <span style={{ fontSize: 11.5, color: N.textS, background: "rgba(255,255,255,0.05)", border: "1px solid " + N.border, padding: "2px 7px", borderRadius: 10, whiteSpace: "nowrap" }}>{cat ? cat.label : a.category}</span>
               <span style={{ color: N.text, fontWeight: 600, flex: 1, minWidth: 160, fontSize: 11.5 }}>{a.action}</span>
               {a.date && <span style={{ fontSize: 9, color: N.textT }}>{a.date}</span>}
               {a.status && <span style={{ fontSize: 9, color: a.status === "Active" || a.status === "Confirmed" ? N.green : N.orange, background: "rgba(255,255,255,0.05)", padding: "2px 6px", borderRadius: 10 }}>{a.status}</span>}
@@ -1002,8 +1016,13 @@ function AIPanel(props) {
       ) : ai.loading ? (
         <div style={{ fontSize: 10.5, color: N.textS }}>Analyzing {d.totalComplaints} complaints{"\u2026"}</div>
       ) : ai.error ? (
-        <div style={{ fontSize: 10, color: N.orange }}>
-          AI unavailable ({ai.error}). Works on the deployed Vercel site with ANTHROPIC_API_KEY set {"\u2014"} see README.
+        <div style={{ fontSize: 10, color: N.orange, lineHeight: 1.5 }}>
+          AI unavailable ({ai.error}).{" "}
+          {isLocalDev()
+            ? "You're on localhost \u2014 `vite dev` doesn't serve /api routes. Run `vercel dev` instead."
+            : String(ai.error).indexOf("404") !== -1
+              ? "The /api/ai function isn't deployed. Check that api/ai.js sits in the project root next to package.json, and that it's committed \u2014 then redeploy."
+              : "Check ANTHROPIC_API_KEY in the Vercel project env vars (Production scope) and redeploy."}
         </div>
       ) : ai.data ? (
         <>
@@ -1394,7 +1413,7 @@ function FocusPanel(props) {
               <input value={form.notes} onChange={function (e) { setForm(Object.assign({}, form, { notes: e.target.value })); }} style={inputStyle} />
             </div>
             <div style={{ display: "flex", gap: 8 }}>
-              <button disabled={busy} onClick={submitAction} style={btnStyle("#fff", N.blue, N.blue)}>{busy ? "Saving\u2026" : (editingAction ? "Update log entry" : "Save to sheet")}</button>
+              <button disabled={busy} onClick={submitAction} style={btnStyle(N.quiet.text, N.quiet.bg, N.quiet.border)}>{busy ? "Saving\u2026" : (editingAction ? "Update log entry" : "Save to sheet")}</button>
               <button disabled={busy} onClick={function () { setShowForm(false); }} style={btnStyle(N.textS, "transparent", N.border)}>Cancel</button>
             </div>
           </div>
@@ -2469,7 +2488,7 @@ export default function ComplaintDashboard() {
 
   if (loading) {
     return (
-      <div style={{ minHeight: "100vh", background: "radial-gradient(900px 500px at 50% -10%, rgba(56,140,255,0.10), transparent 70%), " + N.bg, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 18, fontFamily: FONT }}>
+      <div style={{ minHeight: "100vh", background: "radial-gradient(900px 500px at 50% -10%, rgba(120,150,190,0.05), transparent 70%), " + N.bg, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 18, fontFamily: FONT }}>
         <GlobalStyles />
         <div style={{ position: "relative", width: 48, height: 48 }}>
           <div style={{ position: "absolute", inset: 0, border: "2px solid " + N.border, borderTopColor: N.blue, borderRightColor: N.cyan, borderRadius: "50%", animation: "spin 0.9s cubic-bezier(.5,.1,.5,.9) infinite" }} />
@@ -2609,18 +2628,19 @@ export default function ComplaintDashboard() {
   ];
 
   return (
-    <div style={{ minHeight: "100vh", background: "radial-gradient(1200px 600px at 12% -8%, rgba(56,140,255,0.10), transparent 62%), radial-gradient(900px 500px at 95% 0%, rgba(76,201,240,0.06), transparent 60%), " + N.bg, color: N.text, fontFamily: FONT, display: "flex", alignItems: "flex-start", zoom: UI_ZOOM }}>
+    <div style={{ minHeight: "100vh", background: "radial-gradient(1400px 620px at 20% -10%, rgba(120,150,190,0.045), transparent 65%), " + N.bg, color: N.text, fontFamily: FONT, display: "flex", alignItems: "flex-start", zoom: UI_ZOOM }}>
       <GlobalStyles />
 
       {/* ── LEFT RAIL ── */}
       <aside style={Object.assign({
-        width: 78, flexShrink: 0, alignSelf: "stretch", position: "sticky", top: 0, minHeight: "100vh",
-        background: "linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0) 30%), " + N.bgS,
+        width: 78, flexShrink: 0, position: "sticky", top: 0,
+        height: "calc(100vh / " + UI_ZOOM + ")", overflowY: "auto", overflowX: "hidden",
+        background: N.bgS,
         borderRight: "1px solid " + N.border, display: "flex", flexDirection: "column", alignItems: "center",
         padding: "14px 0 16px", gap: 6, zIndex: 5,
       }, dimUI)}>
-        <div style={{ width: 38, height: 38, borderRadius: 12, background: N.grad, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 6px 20px rgba(56,140,255,0.35)", marginBottom: 12 }}>
-          <Logo />
+        <div style={{ width: 38, height: 38, borderRadius: 11, background: "rgba(255,255,255,0.05)", border: "1px solid " + N.border, display: "flex", alignItems: "center", justifyContent: "center", color: N.text, marginBottom: 12, flexShrink: 0 }}>
+          <Logo size={21} />
         </div>
 
         {NAV.map(function (n) {
@@ -2630,10 +2650,9 @@ export default function ComplaintDashboard() {
               style={{
                 width: 58, padding: "9px 0 7px", borderRadius: 14, cursor: "pointer", fontFamily: "inherit",
                 display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
-                background: active ? "linear-gradient(160deg, rgba(56,140,255,0.22), rgba(76,201,240,0.08))" : "transparent",
-                border: "1px solid " + (active ? "rgba(56,140,255,0.38)" : "transparent"),
-                color: active ? "#CFE3FF" : N.textT,
-                boxShadow: active ? "0 6px 18px rgba(56,140,255,0.20)" : "none",
+                background: active ? N.quiet.bg : "transparent",
+                border: "1px solid " + (active ? N.quiet.border : "transparent"),
+                color: active ? N.quiet.text : N.textT,
               }}>
               <Ico name={n.icon} size={17} weight={active ? 2 : 1.6} />
               <span style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>{n.label}</span>
@@ -2646,7 +2665,7 @@ export default function ComplaintDashboard() {
         {/* Review progress ring — the weekly job, always in view */}
         <div style={{ position: "relative", width: 48, height: 48 }} title={reviewedCount + " of " + heatmapData.length + " reviewed this week"}>
           <svg width="48" height="48" viewBox="0 0 48 48">
-            <circle cx="24" cy="24" r="20" fill="none" stroke="rgba(150,180,235,0.12)" strokeWidth="4" />
+            <circle cx="24" cy="24" r="20" fill="none" stroke="rgba(210,218,230,0.10)" strokeWidth="4" />
             <circle cx="24" cy="24" r="20" fill="none" stroke="url(#railGrad)" strokeWidth="4" strokeLinecap="round"
               strokeDasharray={(2 * Math.PI * 20).toFixed(1)}
               strokeDashoffset={(2 * Math.PI * 20 * (1 - reviewPct)).toFixed(1)}
@@ -2683,12 +2702,11 @@ export default function ComplaintDashboard() {
               return (
                 <button key={i} onClick={function () { setSelectedStore(i); }}
                   style={{
-                    background: active ? N.grad : "transparent",
-                    color: active ? "#fff" : N.textS,
-                    border: "none", borderRadius: 99,
-                    fontSize: 12, fontWeight: 700, fontFamily: "inherit",
-                    padding: "7px 18px", cursor: "pointer",
-                    boxShadow: active ? "0 6px 18px rgba(56,140,255,0.35)" : "none",
+                    background: active ? N.quiet.bg : "transparent",
+                    color: active ? N.quiet.text : N.textT,
+                    border: "1px solid " + (active ? N.quiet.border : "transparent"), borderRadius: 99,
+                    fontSize: 11.5, fontWeight: 700, fontFamily: "inherit",
+                    padding: "6px 16px", cursor: "pointer",
                   }}>
                   {s.name}
                 </button>
@@ -2720,11 +2738,11 @@ export default function ComplaintDashboard() {
           <button onClick={runAllRecommendations} disabled={runState.running}
             style={{
               display: "flex", alignItems: "center", gap: 7,
-              background: runState.running ? "rgba(56,140,255,0.12)" : N.grad,
-              border: runState.running ? "1px solid rgba(56,140,255,0.4)" : "1px solid transparent",
-              color: runState.running ? N.blue : "#fff", fontSize: 11.5, fontWeight: 700, padding: "9px 16px",
+              background: N.quiet.bg,
+              border: "1px solid " + N.quiet.border,
+              color: N.quiet.text, fontSize: 11, fontWeight: 700, padding: "8px 15px",
               borderRadius: 99, cursor: runState.running ? "default" : "pointer", fontFamily: "inherit",
-              boxShadow: runState.running ? "none" : "0 8px 22px rgba(56,140,255,0.35)",
+              opacity: runState.running ? 0.75 : 1,
             }}>
             <Ico name={runState.running ? "refresh" : "sparkle"} size={14} weight={2}
               style={runState.running ? { animation: "spin 1s linear infinite" } : null} />
@@ -2777,7 +2795,7 @@ export default function ComplaintDashboard() {
             return (
               <div key={s.n} style={{ background: "rgba(255,255,255,0.025)", border: "1px solid " + N.border, borderRadius: 13, padding: "9px 11px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 4 }}>
-                  <span style={{ fontSize: 9, fontWeight: 800, color: N.blue, fontVariantNumeric: "tabular-nums" }}>{s.n}</span>
+                  <span style={{ fontSize: 9, fontWeight: 800, color: N.textT, fontVariantNumeric: "tabular-nums" }}>{s.n}</span>
                   <span style={{ fontSize: 10.5, fontWeight: 700, color: N.text }}>{s.t}</span>
                 </div>
                 <div style={{ fontSize: 9.5, color: N.textS, lineHeight: 1.45 }}>{s.d}</div>
@@ -2803,7 +2821,7 @@ export default function ComplaintDashboard() {
                 <span style={{ fontSize: 10, fontWeight: 700, color: N.text, fontVariantNumeric: "tabular-nums" }}>
                   {reviewedCount}/{heatmapData.length}
                 </span>
-                <div style={{ width: 70, height: 5, borderRadius: 99, background: "rgba(150,180,235,0.14)", overflow: "hidden" }}>
+                <div style={{ width: 70, height: 5, borderRadius: 99, background: "rgba(210,218,230,0.12)", overflow: "hidden" }}>
                   <div style={{ width: (reviewPct * 100) + "%", height: "100%", background: N.grad, borderRadius: 99, transition: "width .3s ease" }} />
                 </div>
                 <span style={{ color: N.textT, fontSize: 9 }}>resets Monday</span>
@@ -2934,7 +2952,7 @@ export default function ComplaintDashboard() {
                       })()}>
                       {(function () {
                         var la = (rA || []).slice().sort(function (a, b) { return (b.week || 0) - (a.week || 0); })[0];
-                        if (la) return <span><span style={{ color: N.blue, fontWeight: 700 }}>W{la.week}</span> {la.action}{la.notes ? " \u2014 " + la.notes : ""}</span>;
+                        if (la) return <span><span style={{ color: N.textT, fontWeight: 700 }}>W{la.week}</span> {la.action}{la.notes ? " \u2014 " + la.notes : ""}</span>;
                         var iss = issueByKey[row.key];
                         if (!iss) return <span style={{ color: N.textT }}>{"\u2014"}</span>;
                         return <span>{iss}</span>;
